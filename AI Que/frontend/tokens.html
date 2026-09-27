@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Token Kiosk — AI Queue Estimation</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #6366f1;
+      --primary-gradient: linear-gradient(135deg, #6366f1, #8b5cf6);
+      --card-bg: rgba(255, 255, 255, 0.04);
+      --border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #030712;
+      color: #f1f5f9;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient lighting */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(circle at 20% 15%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 80% 85%, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .container {
+      position: relative; z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    /* Top navigation / header */
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 2.5rem;
+    }
+    .brand { display: flex; align-items: center; gap: 0.85rem; }
+    .brand-icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      background: var(--primary-gradient);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 0 24px rgba(99,102,241,0.5);
+    }
+    .brand h1 { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; }
+    .brand p { font-size: 0.8rem; color: #64748b; }
+
+    .nav-links { display: flex; gap: 0.75rem; }
+    .nav-link {
+      font-size: 0.8rem; color: #94a3b8; text-decoration: none;
+      padding: 0.45rem 0.95rem; border-radius: 999px;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.02);
+      transition: all 0.2s ease;
+    }
+    .nav-link:hover { color: #fff; background: rgba(255, 255, 255, 0.06); border-color: rgba(99,102,241,0.3); }
+
+    /* Live status banner */
+    .status-banner {
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 1.25rem;
+      padding: 1.25rem 1.75rem;
+      margin-bottom: 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+      backdrop-filter: blur(12px);
+    }
+    .status-info { display: flex; align-items: center; gap: 1rem; }
+    .status-pulse {
+      width: 12px; height: 12px; border-radius: 50%; background: #22c55e;
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+    .status-title { font-size: 0.9rem; font-weight: 700; color: #f8fafc; }
+    .status-desc { font-size: 0.78rem; color: #94a3b8; margin-top: 2px; }
+    .status-badge {
+      font-size: 1.15rem; font-weight: 800; color: #818cf8;
+      background: rgba(99, 102, 241, 0.15);
+      padding: 0.5rem 1.1rem; border-radius: 0.85rem;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    /* Grid layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1.75rem;
+    }
+
+    @media (max-width: 768px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Card styles */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1.5rem;
+      backdrop-filter: blur(16px);
+      padding: 1.75rem;
+      transition: box-shadow 0.3s ease;
+    }
+    .card:hover {
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-heading {
+      font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #64748b; margin-bottom: 1.25rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* Form items */
+    .form-group { margin-bottom: 1.25rem; }
+    .form-label {
+      display: block; font-size: 0.85rem; font-weight: 600; color: #cbd5e1;
+      margin-bottom: 0.5rem;
+    }
+    .form-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.85rem;
+      padding: 0.85rem 1rem;
+      color: #fff; font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .form-input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    }
+
+    .service-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .service-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 0.95rem;
+      padding: 0.9rem;
+      text-align: left;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex; flex-direction: column; gap: 0.25rem;
+    }
+    .service-btn.selected {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: #6366f1;
+      color: #fff;
+      box-shadow: 0 0 16px rgba(99, 102, 241, 0.25);
+    }
+    .service-icon { font-size: 1.25rem; margin-bottom: 0.2rem; }
+    .service-name { font-size: 0.85rem; font-weight: 600; }
+    .service-sub { font-size: 0.7rem; color: #64748b; }
+
+    .btn-issue {
+      width: 100%;
+      background: var(--primary-gradient);
+      color: #fff;
+      border: none;
+      border-radius: 1rem;
+      padding: 1.05rem;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 24px rgba(99, 102, 241, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-issue:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.55);
+    }
+    .btn-issue:active { transform: translateY(0); }
+
+    /* Issued Token Modal / Card */
+    #issuedModal {
+      display: none;
+      background: linear-gradient(145deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.95));
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      border-radius: 1.5rem;
+      padding: 2rem;
+      text-align: center;
+      margin-top: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.92); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    #issuedModal::before {
+      content: '';
+      position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .token-badge {
+      display: inline-block;
+      font-size: 3.2rem; font-weight: 900;
+      letter-spacing: -0.03em;
+      color: #818cf8;
+      text-shadow: 0 0 30px rgba(129, 140, 248, 0.5);
+      margin: 0.5rem 0;
+    }
+    .token-slot {
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: #4ade80;
+      font-weight: 700; font-size: 1rem;
+      padding: 0.6rem 1.4rem; border-radius: 999px;
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .token-meta {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+      margin: 1.25rem 0;
+      text-align: left;
+    }
+    .token-meta-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 0.85rem; padding: 0.75rem;
+    }
+    .meta-val { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    .meta-lbl { font-size: 0.68rem; color: #64748b; text-transform: uppercase; margin-top: 2px; }
+
+    /* Lookup section */
+    .lookup-input-wrap {
+      display: flex; gap: 0.65rem; margin-bottom: 1rem;
+    }
+    .btn-lookup {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 0.85rem; padding: 0 1.2rem;
+      color: #fff; font-weight: 600; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-lookup:hover { background: rgba(99, 102, 241, 0.2); border-color: #6366f1; }
+
+    /* Serving boards */
+    .serving-list {
+      display: flex; flex-direction: column; gap: 0.65rem;
+    }
+    .serving-item {
+      display: flex; justify-content: space-between; align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 0.95rem; padding: 0.85rem 1.1rem;
+    }
+    .serving-token { font-size: 1.15rem; font-weight: 800; color: #38bdf8; }
+    .serving-counter {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8; font-size: 0.75rem; font-weight: 700;
+      padding: 0.35rem 0.75rem; border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .print-tip {
+      font-size: 0.72rem; color: #64748b; margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🎫</div>
+      <div>
+        <h1>Smart Token Kiosk</h1>
+        <p>Dynamic slot booking &amp; wait estimation</p>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="nav-link">🖥️ Wall Display</a>
+      <a href="/staff" class="nav-link">👷 Staff Desk</a>
+    </div>
+  </header>
+
+  <!-- Live Status Bar -->
+  <div class="status-banner">
+    <div class="status-info">
+      <div class="status-pulse"></div>
+      <div>
+        <div class="status-title">Current Queue Pressure</div>
+        <div class="status-desc" id="statusMessage">Evaluating crowd flow &amp; service rate...</div>
+      </div>
+    </div>
+    <div class="status-badge" id="currentWaitBadge">~0 min wait</div>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- Issue Token Column -->
+    <div>
+      <div class="card">
+        <div class="card-heading">
+          <span>Get Your Ticket</span>
+          <span style="color:#818cf8;">Step 1 of 2</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Full Name or Visitor ID (Optional)</label>
+          <input type="text" id="custName" class="form-input" placeholder="e.g. John Doe" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Select Service Required</label>
+          <div class="service-options">
+            <div class="service-btn selected" onclick="selectService(this, 'General Banking')">
+              <span class="service-icon">🏛️</span>
+              <span class="service-name">General Banking</span>
+              <span class="service-sub">Inquiry &amp; Tokens</span>
+            </div>
+            <div class="service-btn" onclick="selectService(this, 'Cash Deposit / Withdrawal')">
+              <span class="service-icon">💵</span>
+              <span class="service-name">Cash Counter</span>
+              <span class="service-sub">Deposit / Withdrawal</span>
+            </div>
+            <div class="service-btn" onclick="selectService(this, 'Account Services')">
+              <span class="service-icon">📑</span>
+              <span class="service-name">Account Desk</span>
+              <span class="service-sub">KYC, Card, Cheques</span>
+            </div>
+            <div class="service-btn" onclick="selectService(this, 'Loans & Mortgages')">
+              <span class="service-icon">🤝</span>
+              <span class="service-name">Loan Officer</span>
+              <span class="service-sub">EMI &amp; Advisory</span>
+            </div>
+            <div class="service-btn" onclick="selectService(this, 'Govt Documentation / Passbook')">
+              <span class="service-icon">📖</span>
+              <span class="service-name">Documentation</span>
+              <span class="service-sub">Passbook &amp; Govt Forms</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-issue" onclick="issueToken()">
+          ⚡ Issue My Token &amp; Assigned Time
+        </button>
+
+        <!-- Result Ticket -->
+        <div id="issuedModal">
+          <div style="font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8;">Your Assigned Token</div>
+          <div class="token-badge" id="resTokenNum">A-101</div>
+          <div>
+            <div class="token-slot">
+              <span>🕒 Estimated Service:</span>
+              <strong id="resEstTime">10:45 AM</strong>
+            </div>
+          </div>
+
+          <div class="token-meta">
+            <div class="token-meta-box">
+              <div class="meta-val" id="resWaitMins">~12 min</div>
+              <div class="meta-lbl">Expected Wait</div>
+            </div>
+            <div class="token-meta-box">
+              <div class="meta-val" id="resAhead">3 people</div>
+              <div class="meta-lbl">Ahead in Line</div>
+            </div>
+          </div>
+
+          <p style="font-size:0.78rem;color:#cbd5e1;line-height:1.4;">
+            Please take a seat. Your number will appear on the wall display around the scheduled time.
+          </p>
+          <div class="print-tip">✓ Saved to system · You can check status anytime using token number.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Active Counters & Tracking Column -->
+    <div>
+
+      <!-- Check Status -->
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-heading">
+          <span>Check My Token Status</span>
+        </div>
+        <div class="lookup-input-wrap">
+          <input type="text" id="lookupInput" class="form-input" placeholder="Enter Token (e.g. C-102)" />
+          <button class="btn-lookup" onclick="lookupToken()">Search</button>
+        </div>
+        <div id="lookupResult" style="display:none;font-size:0.85rem;line-height:1.5;"></div>
+      </div>
+
+      <!-- Now Serving Board -->
+      <div class="card">
+        <div class="card-heading">
+          <span>Now Calling</span>
+          <span style="color:#22c55e;">● Live</span>
+        </div>
+        <div class="serving-list" id="servingList">
+          <div style="font-size:0.8rem;color:#475569;text-align:center;padding:1rem;">
+            No counters actively calling right now.
+          </div>
+        </div>
+
+        <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;font-size:0.8rem;color:#94a3b8;">
+          <span>Waiting in Queue: <strong id="sumWaiting" style="color:#fff;">0</strong></span>
+          <span>Completed Today: <strong id="sumDone" style="color:#fff;">0</strong></span>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  let selectedService = 'General Banking';
+
+  function selectService(el, name) {
+    document.querySelectorAll('.service-btn').forEach(b => b.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedService = name;
+  }
+
+  // Fetch status banner info
+  async function fetchStatusBanner() {
+    try {
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('statusMessage').textContent = data.message;
+        document.getElementById('currentWaitBadge').textContent = `~${Math.round(data.predicted_wait_mins)} min wait`;
+      }
+
+      // Also refresh token summary
+      const sumRes = await fetch('/api/tokens/summary');
+      if (sumRes.ok) {
+        const sum = await sumRes.json();
+        document.getElementById('sumWaiting').textContent = sum.waiting;
+        document.getElementById('sumDone').textContent = sum.completed;
+
+        const servingContainer = document.getElementById('servingList');
+        if (sum.active_serving && sum.active_serving.length > 0) {
+          servingContainer.innerHTML = sum.active_serving.map(item => `
+            <div class="serving-item">
+              <div>
+                <span class="serving-token">${item.token_number}</span>
+              </div>
+              <div class="serving-counter">Counter ${item.counter_id || 1}</div>
+            </div>
+          `).join('');
+        } else {
+          servingContainer.innerHTML = '<div style="font-size:0.8rem;color:#475569;text-align:center;padding:1rem;">No tokens currently being served.</div>';
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Issue new token
+  async function issueToken() {
+    const custName = document.getElementById('custName').value.trim();
+    const btn = document.querySelector('.btn-issue');
+    btn.disabled = true;
+    btn.textContent = 'Generating Ticket...';
+
+    try {
+      const res = await fetch('/api/tokens/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service_type: selectedService,
+          customer_name: custName || null
+        })
+      });
+
+      if (!res.ok) throw new Error('Failed to issue token');
+      const data = await res.json();
+
+      // Show result
+      document.getElementById('resTokenNum').textContent = data.token_number;
+      document.getElementById('resEstTime').textContent = data.estimated_time;
+      document.getElementById('resWaitMins').textContent = `~${Math.round(data.estimated_wait_mins)} min`;
+      document.getElementById('resAhead').textContent = `${data.people_ahead} ${data.people_ahead === 1 ? 'person' : 'people'}`;
+
+      const modal = document.getElementById('issuedModal');
+      modal.style.display = 'block';
+      modal.scrollIntoView({ behavior: 'smooth' });
+
+      fetchStatusBanner();
+    } catch (err) {
+      alert('Error creating token. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⚡ Issue My Token & Assigned Time';
+    }
+  }
+
+  // Lookup token status
+  async function lookupToken() {
+    const num = document.getElementById('lookupInput').value.trim();
+    if (!num) return;
+    const resBox = document.getElementById('lookupResult');
+    resBox.style.display = 'block';
+    resBox.innerHTML = '<span style="color:#94a3b8;">Searching...</span>';
+
+    try {
+      const res = await fetch(`/api/tokens/${encodeURIComponent(num)}`);
+      if (!res.ok) {
+        resBox.innerHTML = '<span style="color:#ef4444;">❌ Token not found. Please verify the number.</span>';
+        return;
+      }
+      const data = await res.json();
+      let statusColor = '#f59e0b';
+      if (data.status === 'serving') statusColor = '#38bdf8';
+      if (data.status === 'completed') statusColor = '#22c55e';
+
+      resBox.innerHTML = `
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:0.85rem;padding:0.85rem;margin-top:0.5rem;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">
+            <strong style="color:#fff;font-size:1rem;">${data.token_number}</strong>
+            <span style="color:${statusColor};font-weight:700;text-transform:capitalize;">${data.status}</span>
+          </div>
+          <div style="color:#94a3b8;font-size:0.75rem;">Service: ${data.service_type}</div>
+          <div style="color:#cbd5e1;font-size:0.8rem;margin-top:0.4rem;">
+            Estimated Slot: <strong style="color:#4ade80;">${data.estimated_time}</strong>
+          </div>
+          ${data.status === 'waiting' ? `<div style="color:#94a3b8;font-size:0.75rem;margin-top:0.2rem;">${data.people_ahead} people ahead of you</div>` : ''}
+          ${data.status === 'serving' ? `<div style="color:#38bdf8;font-weight:600;font-size:0.8rem;margin-top:0.2rem;">👉 Please proceed to Counter ${data.counter_id || 1}</div>` : ''}
+        </div>
+      `;
+    } catch {
+      resBox.innerHTML = '<span style="color:#ef4444;">Error looking up token.</span>';
+    }
+  }
+
+  fetchStatusBanner();
+  setInterval(fetchStatusBanner, 15000);
+</script>
+</body>
+</html>

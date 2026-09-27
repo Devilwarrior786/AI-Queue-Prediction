@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Panel — Queue Management</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100%;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #030712;
+      color: #f1f5f9;
+    }
+
+    /* ── Gradient mesh background ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 15% 20%, rgba(99,102,241,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 60% at 85% 80%, rgba(139,92,246,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 50% 50%, rgba(16,185,129,0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* ── Scrollable container ── */
+    #app {
+      position: relative; z-index: 1;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 3rem;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 2rem;
+    }
+    .brand { display: flex; align-items: center; gap: 0.75rem; }
+    .brand-icon {
+      width: 44px; height: 44px; border-radius: 13px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      box-shadow: 0 0 20px rgba(99,102,241,0.45);
+    }
+    .brand-text h1 { font-size: 1.15rem; font-weight: 800; }
+    .brand-text p  { font-size: 0.72rem; color: #64748b; }
+
+    .display-link {
+      font-size: 0.75rem; color: #6366f1;
+      text-decoration: none; padding: 0.4rem 0.85rem;
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 999px;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .display-link:hover {
+      background: rgba(99,102,241,0.1);
+      box-shadow: 0 0 12px rgba(99,102,241,0.3);
+    }
+
+    /* ── Glass card ── */
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 1.25rem;
+      backdrop-filter: blur(16px);
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      transition: box-shadow 0.3s ease;
+    }
+    .card:hover { box-shadow: 0 0 0 1px rgba(99,102,241,0.2), 0 8px 30px rgba(0,0,0,0.25); }
+
+    .card-title {
+      font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #475569; margin-bottom: 1.25rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .card-title::after {
+      content: ''; flex: 1; height: 1px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.08), transparent);
+    }
+
+    /* ── Sliders ── */
+    .slider-group { margin-bottom: 1.5rem; }
+    .slider-group:last-child { margin-bottom: 0; }
+
+    .slider-header {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 0.6rem;
+    }
+    .slider-label { font-size: 0.85rem; font-weight: 600; color: #cbd5e1; }
+    .slider-value {
+      font-size: 1.6rem; font-weight: 800; color: #818cf8;
+      min-width: 2.5ch; text-align: right;
+      transition: color 0.2s;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .slider-track { position: relative; height: 6px; border-radius: 999px; }
+    .slider-track input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 100%;
+      background: transparent; cursor: pointer; position: relative; z-index: 2;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 6px; border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px; border-radius: 50%; margin-top: -7px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.3), 0 0 12px rgba(99,102,241,0.5);
+      transition: box-shadow 0.2s, transform 0.15s;
+    }
+    input[type=range]:hover::-webkit-slider-thumb {
+      box-shadow: 0 0 0 5px rgba(99,102,241,0.25), 0 0 20px rgba(99,102,241,0.6);
+      transform: scale(1.1);
+    }
+    input[type=range]:active::-webkit-slider-thumb { transform: scale(0.95); }
+
+    /* Progress fill behind thumb */
+    .slider-fill {
+      position: absolute; top: 0; left: 0; height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      pointer-events: none; z-index: 1;
+      transition: width 0.05s;
+    }
+
+    .slider-ticks { display: flex; justify-content: space-between; font-size: 0.65rem; color: #334155; margin-top: 0.4rem; }
+
+    /* ── Number input ── */
+    .num-input {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      color: #f1f5f9; font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .num-input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+    }
+    .num-input::placeholder { color: #334155; }
+
+    /* ── Submit button ── */
+    .btn-submit {
+      width: 100%; padding: 0.9rem;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white; font-size: 0.95rem; font-weight: 700;
+      border: none; border-radius: 0.85rem; cursor: pointer;
+      position: relative; overflow: hidden;
+      transition: transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(99,102,241,0.35);
+    }
+    .btn-submit:hover  { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(99,102,241,0.5); }
+    .btn-submit:active { transform: translateY(0) scale(0.98); }
+
+    /* Shimmer on hover */
+    .btn-submit::before {
+      content: '';
+      position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s ease;
+    }
+    .btn-submit:hover::before { left: 150%; }
+
+    /* ── Result card ── */
+    #resultCard {
+      display: none;
+      animation: slideUp 0.4s cubic-bezier(0.34,1.2,0.64,1) forwards;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-main {
+      text-align: center; padding: 1rem 0 1.25rem;
+    }
+    #resultWait {
+      font-size: 5rem; font-weight: 900; line-height: 1;
+      letter-spacing: -0.04em;
+      transition: color 0.5s;
+    }
+    .result-unit { font-size: 1.2rem; color: #475569; font-weight: 600; margin-left: 0.3rem; }
+    #resultMsg { font-size: 1rem; font-weight: 600; margin-top: 0.5rem; transition: color 0.5s; }
+
+    .result-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+    .result-stat {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 0.85rem; padding: 0.85rem;
+      text-align: center;
+    }
+    .result-stat-val { font-size: 1.3rem; font-weight: 800; color: #e2e8f0; }
+    .result-stat-lbl { font-size: 0.65rem; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+    /* Status colours */
+    .c-short    { color: #22c55e; }
+    .c-moderate { color: #f59e0b; }
+    .c-long     { color: #ef4444; }
+
+    /* ── History table ── */
+    .history-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .history-table th {
+      color: #475569; text-align: left; padding-bottom: 0.5rem;
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .history-table td {
+      padding: 0.6rem 0; color: #94a3b8;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .history-table tr:last-child td { border-bottom: none; }
+    .history-table td:last-child { color: #818cf8; font-weight: 600; }
+    .history-table tr:hover td { color: #e2e8f0; background: rgba(255,255,255,0.02); }
+    .refresh-btn {
+      background: none; border: none; cursor: pointer;
+      color: #6366f1; font-size: 0.75rem;
+    }
+    .refresh-btn:hover { text-decoration: underline; }
+
+    /* ── Service log ── */
+    .svc-row { display: flex; gap: 0.75rem; }
+    .btn-log {
+      background: rgba(16,185,129,0.15);
+      border: 1px solid rgba(16,185,129,0.3);
+      color: #34d399; font-weight: 700; font-size: 0.85rem;
+      padding: 0.7rem 1.1rem; border-radius: 0.75rem;
+      cursor: pointer; white-space: nowrap;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .btn-log:hover {
+      background: rgba(16,185,129,0.25);
+      box-shadow: 0 0 12px rgba(16,185,129,0.25);
+    }
+    #svcMsg {
+      display: none; margin-top: 0.6rem;
+      font-size: 0.78rem; color: #34d399;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+
+    /* ── Error ── */
+    #errorMsg {
+      display: none;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #fca5a5; border-radius: 0.75rem;
+      padding: 0.75rem 1rem; font-size: 0.82rem;
+      margin-bottom: 1rem;
+      animation: fadeIn 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🏦</div>
+      <div class="brand-text">
+        <h1>Staff Panel</h1>
+        <p>Queue management &amp; predictions</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;">
+      <a href="/tokens" class="display-link" style="border-color:rgba(139,92,246,0.4);color:#a78bfa;">🎫 Token Kiosk</a>
+      <a href="/" class="display-link">↗ Public Display</a>
+    </div>
+  </header>
+
+  <!-- Error -->
+  <div id="errorMsg"></div>
+
+  <!-- Input Card -->
+  <div class="card">
+    <div class="card-title">📊 Queue State</div>
+
+    <!-- Queue Depth -->
+    <div class="slider-group">
+      <div class="slider-header">
+        <span class="slider-label">People in Queue</span>
+        <span class="slider-value" id="queueVal">5</span>
+      </div>
+      <div class="slider-track">
+        <div class="slider-fill" id="queueFill" style="width:8.3%"></div>
+        <input type="range" id="queueDepth" min="0" max="60" value="5" oninput="syncSlider(this,'queueVal','queueFill',0,60,'#818cf8')" />
+      </div>
+      <div class="slider-ticks"><span>0</span><span>15</span><span>30</span><span>45</span><span>60</span></div>
+    </div>
+
+    <!-- Active Counters -->
+    <div class="slider-group">
+      <div class="slider-header">
+        <span class="slider-label">Open Service Windows</span>
+        <span class="slider-value" id="counterVal">3</span>
+      </div>
+      <div class="slider-track">
+        <div class="slider-fill" id="counterFill" style="width:22.2%"></div>
+        <input type="range" id="activeCounters" min="1" max="10" value="3" oninput="syncSlider(this,'counterVal','counterFill',1,10,'#34d399')" />
+      </div>
+      <div class="slider-ticks"><span>1</span><span>3</span><span>5</span><span>7</span><span>10</span></div>
+    </div>
+  </div>
+
+  <!-- Override Card -->
+  <div class="card">
+    <div class="card-title">⚙ Optional Override</div>
+    <label style="font-size:0.82rem;color:#64748b;display:block;margin-bottom:0.5rem;">
+      Avg service time (minutes) — leave blank to use rolling average
+    </label>
+    <input type="number" id="serviceTime" class="num-input" min="0.5" max="60" step="0.5"
+           placeholder="e.g. 5.0" />
+  </div>
+
+  <!-- Submit -->
+  <button class="btn-submit" onclick="submitUpdate()">
+    📤 &nbsp; Update Queue &amp; Get Prediction
+  </button>
+
+  <!-- Result Card -->
+  <div class="card" id="resultCard" style="margin-top:1rem;">
+    <div class="card-title">🎯 Prediction Result</div>
+    <div class="result-main">
+      <div>
+        <span id="resultWait">—</span>
+        <span class="result-unit">min</span>
+      </div>
+      <div id="resultMsg"></div>
+    </div>
+    <div class="result-grid">
+      <div class="result-stat">
+        <div class="result-stat-val" id="rQueue">—</div>
+        <div class="result-stat-lbl">In Queue</div>
+      </div>
+      <div class="result-stat">
+        <div class="result-stat-val" id="rCounters">—</div>
+        <div class="result-stat-lbl">Windows</div>
+      </div>
+      <div class="result-stat">
+        <span id="rConf" style="font-size:0.72rem;font-weight:700;padding:0.25rem 0.6rem;border-radius:999px;">—</span>
+        <div class="result-stat-lbl" style="margin-top:6px;">Mode</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Token Desk Management Card -->
+  <div class="card" style="margin-top:1rem;border-color:rgba(139,92,246,0.25);">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>🎫 Token Calling Desk</span>
+      <span id="tokenDeskCount" style="color:#a78bfa;font-size:0.75rem;font-weight:700;">0 Waiting</span>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;margin-bottom:1rem;">
+      <select id="staffCounterId" class="num-input" style="flex:1;">
+        <option value="1">Window / Counter 1</option>
+        <option value="2">Window / Counter 2</option>
+        <option value="3">Window / Counter 3</option>
+        <option value="4">Window / Counter 4</option>
+        <option value="5">Window / Counter 5</option>
+      </select>
+      <button class="btn-log" onclick="callNextToken()" style="background:rgba(99,102,241,0.2);border-color:#6366f1;color:#818cf8;flex:1.2;">
+        📢 Call Next Token
+      </button>
+    </div>
+
+    <!-- Active Token Queue List -->
+    <div id="tokenQueueList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:0.5rem;">
+      <div style="text-align:center;color:#475569;font-size:0.8rem;padding:0.75rem;">Loading active tokens...</div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:0.5rem;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>🕒 Recent Logs</span>
+      <button class="refresh-btn" onclick="loadHistory()">↺ Refresh</button>
+    </div>
+    <div id="historyBody">
+      <table class="history-table">
+        <thead><tr>
+          <th>Time</th><th>Queue</th><th>Windows</th><th>Predicted</th>
+        </tr></thead>
+        <tbody id="histRows"><tr><td colspan="4" style="color:#334155;padding-top:0.5rem">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Service Logger -->
+  <div class="card" style="margin-top:0.5rem;">
+    <div class="card-title">✅ Log Service Completion</div>
+    <p style="font-size:0.75rem;color:#475569;margin-bottom:0.85rem;">
+      After each customer finishes, log the time taken to keep the rolling average accurate.
+    </p>
+    <div class="svc-row">
+      <input type="number" id="svcTime" class="num-input" min="0.5" max="60" step="0.5" placeholder="Minutes taken" style="flex:1" />
+      <button class="btn-log" onclick="logService()">✓ Log</button>
+    </div>
+    <div id="svcMsg"></div>
+  </div>
+
+</div>
+
+<script>
+  // ── Slider sync ──
+  function syncSlider(el, valId, fillId, min, max) {
+    const pct = ((el.value - min) / (max - min)) * 100;
+    document.getElementById(valId).textContent = el.value;
+    document.getElementById(fillId).style.width = pct + '%';
+  }
+
+  // ── Submit ──
+  async function submitUpdate() {
+    const queue_depth     = parseInt(document.getElementById('queueDepth').value);
+    const active_counters = parseInt(document.getElementById('activeCounters').value);
+    const svcRaw          = document.getElementById('serviceTime').value;
+    const body = { queue_depth, active_counters };
+    if (svcRaw) body.avg_service_time_mins = parseFloat(svcRaw);
+
+    const errEl = document.getElementById('errorMsg');
+    errEl.style.display = 'none';
+
+    const btn = document.querySelector('.btn-submit');
+    btn.textContent = '⏳  Predicting…';
+    btn.disabled = true;
+
+    try {
+      const resp = await fetch('/api/queue/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || 'Server error');
+      const d = await resp.json();
+      showResult(d);
+      loadHistory();
+    } catch(e) {
+      errEl.textContent = '❌  ' + e.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.textContent = '📤  Update Queue & Get Prediction';
+      btn.disabled = false;
+    }
+  }
+
+  const CLASS_MAP = { short: 'c-short', moderate: 'c-moderate', long: 'c-long' };
+
+  function showResult(d) {
+    const card = document.getElementById('resultCard');
+    card.style.display = 'block';
+    card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+
+    const cls = CLASS_MAP[d.status_label] || 'c-moderate';
+    const waitEl = document.getElementById('resultWait');
+    waitEl.className = cls;
+    waitEl.style.textShadow = waitEl.style.color;
+    animateCount(waitEl, 0, Math.round(d.predicted_wait_mins));
+
+    const msgEl = document.getElementById('resultMsg');
+    msgEl.className = cls;
+    msgEl.textContent = d.message;
+
+    document.getElementById('rQueue').textContent    = d.queue_depth;
+    document.getElementById('rCounters').textContent = d.active_counters;
+
+    const conf = document.getElementById('rConf');
+    if (d.confidence === 'model') {
+      conf.textContent = '🤖 ML Model';
+      conf.style.cssText = 'background:rgba(14,165,233,0.15);color:#38bdf8;border:1px solid rgba(14,165,233,0.3);font-size:0.72rem;font-weight:700;padding:0.25rem 0.6rem;border-radius:999px';
+    } else {
+      conf.textContent = '📐 Formula';
+      conf.style.cssText = 'background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.72rem;font-weight:700;padding:0.25rem 0.6rem;border-radius:999px';
+    }
+  }
+
+  // Animated counter
+  function animateCount(el, from, to) {
+    const dur = 500, start = performance.now();
+    (function step(now) {
+      const p = Math.min((now - start) / dur, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(from + (to - from) * ease);
+      if (p < 1) requestAnimationFrame(step);
+    })(performance.now());
+  }
+
+  // ── History ──
+  async function loadHistory() {
+    try {
+      const rows = await (await fetch('/api/history?limit=8')).json();
+      const tbody = document.getElementById('histRows');
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:#334155;padding-top:0.5rem">No entries yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => {
+        const t = r.timestamp.slice(11,16);
+        const w = r.predicted_wait_mins != null ? Math.round(r.predicted_wait_mins)+' min' : '—';
+        return `<tr>
+          <td>${t}</td>
+          <td>${r.queue_depth}</td>
+          <td>${r.active_counters}</td>
+          <td>${w}</td>
+        </tr>`;
+      }).join('');
+    } catch {
+      document.getElementById('histRows').innerHTML =
+        '<tr><td colspan="4" style="color:#475569">Could not load.</td></tr>';
+    }
+  }
+
+  // ── Service log ──
+  async function logService() {
+    const mins = parseFloat(document.getElementById('svcTime').value);
+    if (!mins) return;
+    try {
+      const d = await (await fetch('/api/service/log', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({service_time_mins: mins}),
+      })).json();
+      const msg = document.getElementById('svcMsg');
+      msg.textContent = `Logged. New rolling avg: ${d.new_avg_service_time_mins} min`;
+      msg.style.display = 'block';
+      document.getElementById('svcTime').value = '';
+      setTimeout(() => { msg.style.display = 'none'; }, 4000);
+    } catch { alert('Failed to log'); }
+  }
+
+  // ── Token Desk Operations ──
+  let activeTokensList = [];
+
+  async function loadActiveTokens() {
+    try {
+      const res = await fetch('/api/tokens/active');
+      if (!res.ok) return;
+      activeTokensList = await res.json();
+      const waiting = activeTokensList.filter(t => t.status === 'waiting');
+      document.getElementById('tokenDeskCount').textContent = `${waiting.length} Waiting`;
+
+      const container = document.getElementById('tokenQueueList');
+      if (activeTokensList.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:#475569;font-size:0.78rem;padding:0.75rem;">No active tokens right now.</div>';
+        return;
+      }
+
+      container.innerHTML = activeTokensList.map(t => {
+        const isServing = t.status === 'serving';
+        return `
+          <div style="background:rgba(255,255,255,0.02);border:1px solid ${isServing ? 'rgba(56,189,248,0.3)' : 'rgba(255,255,255,0.06)'};border-radius:0.75rem;padding:0.65rem 0.85rem;display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
+            <div>
+              <div style="font-weight:700;color:${isServing ? '#38bdf8' : '#fff'};font-size:0.95rem;">${t.token_number}</div>
+              <div style="font-size:0.7rem;color:#64748b;">${t.service_type} ${t.customer_name ? '· ' + t.customer_name : ''}</div>
+              <div style="font-size:0.7rem;color:#4ade80;">Slot: ${t.estimated_time}</div>
+            </div>
+            <div style="display:flex;gap:0.4rem;">
+              ${isServing ? `
+                <button onclick="setTokenStatus('${t.token_number}','completed')" class="btn-log" style="padding:0.35rem 0.65rem;font-size:0.75rem;">
+                  ✓ Done
+                </button>
+              ` : `
+                <button onclick="setTokenStatus('${t.token_number}','serving')" class="btn-log" style="background:rgba(99,102,241,0.2);border-color:#6366f1;color:#818cf8;padding:0.35rem 0.65rem;font-size:0.75rem;">
+                  Call
+                </button>
+              `}
+              <button onclick="setTokenStatus('${t.token_number}','cancelled')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:0.75rem;padding:0.2rem 0.4rem;">
+                ✕
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function callNextToken() {
+    const counterId = parseInt(document.getElementById('staffCounterId').value) || 1;
+    const next = activeTokensList.find(t => t.status === 'waiting');
+    if (!next) {
+      alert('No tokens currently waiting in queue.');
+      return;
+    }
+    await setTokenStatus(next.token_number, 'serving', counterId);
+  }
+
+  async function setTokenStatus(tokenNum, status, counterId = null) {
+    if (!counterId) {
+      counterId = parseInt(document.getElementById('staffCounterId').value) || 1;
+    }
+    try {
+      const res = await fetch(`/api/tokens/${encodeURIComponent(tokenNum)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: status, counter_id: counterId })
+      });
+      if (res.ok) {
+        loadActiveTokens();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Init
+  loadHistory();
+  loadActiveTokens();
+  setInterval(loadActiveTokens, 8000);
+</script>
+</body>
+</html>

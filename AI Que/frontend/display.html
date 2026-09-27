@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Queue Status — Live Display</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --short:    #22c55e;
+      --moderate: #f59e0b;
+      --long:     #ef4444;
+      --accent:   #6366f1;
+      --glow:     rgba(99,102,241,0.35);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #030712;
+      color: #f8fafc;
+      overflow: hidden;
+    }
+
+    /* ── Animated background ── */
+    #bg-canvas {
+      position: fixed; inset: 0;
+      z-index: 0;
+    }
+
+    /* Radial glow that reacts to status */
+    #glow-orb {
+      position: fixed;
+      width: 700px; height: 700px;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.18;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -60%);
+      transition: background 1.2s ease;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── Layout ── */
+    #app {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 2rem 2.5rem;
+      gap: 1.5rem;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .brand-icon {
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 0 20px rgba(99,102,241,0.5);
+    }
+    .brand-text h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
+    .brand-text p  { font-size: 0.8rem; color: #64748b; }
+
+    .header-right {
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .live-dot {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-size: 0.75rem; color: #22c55e; font-weight: 600;
+    }
+    .live-dot span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e;
+      animation: livePulse 1.5s ease infinite;
+    }
+    @keyframes livePulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); }
+      50%       { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+    }
+
+    #clock {
+      font-size: 0.85rem; color: #475569;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Main ── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    /* Glass card base */
+    .glass {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 1.5rem;
+      backdrop-filter: blur(16px);
+    }
+
+    /* ── Wait Card ── */
+    .wait-card {
+      padding: 3rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .wait-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, var(--card-glow, rgba(99,102,241,0.12)) 0%, transparent 65%);
+      transition: background 1.2s ease;
+      pointer-events: none;
+    }
+
+    .wait-label {
+      font-size: 0.75rem; letter-spacing: 0.18em;
+      text-transform: uppercase; color: #475569;
+      margin-bottom: 0.75rem;
+    }
+
+    .wait-number-wrap {
+      position: relative; display: inline-block;
+    }
+    #waitNum {
+      font-size: clamp(6rem, 16vw, 11rem);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.05em;
+      transition: color 1s ease;
+      display: block;
+      /* count-up shimmer */
+    }
+    .wait-unit {
+      position: absolute; bottom: 1rem; right: -2rem;
+      font-size: 1.8rem; font-weight: 700; color: #475569;
+    }
+
+    /* Animated ring around number */
+    .ring-svg {
+      position: absolute;
+      inset: -20px;
+      animation: rotateSlow 8s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes rotateSlow {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      margin-top: 1.5rem;
+      padding: 0.55rem 1.4rem;
+      border-radius: 999px;
+      font-size: 0.9rem; font-weight: 700; letter-spacing: 0.06em;
+      transition: background 1s ease, color 1s ease, box-shadow 1s ease;
+    }
+
+    #queueMsg {
+      margin-top: 1rem;
+      font-size: 1.2rem; color: #94a3b8;
+      font-weight: 500;
+    }
+
+    /* ── Side Panel ── */
+    .side-panel {
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+
+    /* ── Stat Card ── */
+    .stat-card {
+      padding: 1.25rem 1.5rem;
+      display: flex; align-items: center; gap: 1rem;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+    .stat-icon {
+      width: 46px; height: 46px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; flex-shrink: 0;
+    }
+    .stat-info { flex: 1; }
+    .stat-value {
+      font-size: 1.6rem; font-weight: 800;
+      color: #e2e8f0;
+      transition: color 0.6s ease;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-label { font-size: 0.72rem; color: #64748b; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 1px; }
+
+    /* ── Legend Card ── */
+    .legend-card {
+      padding: 1.25rem 1.5rem;
+    }
+    .legend-title { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: #475569; margin-bottom: 0.75rem; }
+    .legend-items { display: flex; flex-direction: column; gap: 0.5rem; }
+    .legend-row {
+      display: flex; align-items: center; gap: 0.65rem;
+      font-size: 0.8rem; color: #94a3b8;
+    }
+    .legend-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+
+    /* ── Confidence Badge ── */
+    .conf-card {
+      padding: 1rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .conf-label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+    #confBadge {
+      font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.75rem; border-radius: 999px;
+    }
+    .badge-model   { background: rgba(14,165,233,0.15); color: #38bdf8; border: 1px solid rgba(14,165,233,0.3); }
+    .badge-formula { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+
+    /* ── Footer ── */
+    footer {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.75rem; color: #334155;
+    }
+    footer a { color: #6366f1; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    #refreshBar {
+      width: 120px; height: 3px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden;
+    }
+    #refreshFill {
+      height: 100%; background: #6366f1; border-radius: 999px;
+      width: 100%;
+      transition: width 1s linear;
+    }
+
+    /* ── Offline overlay ── */
+    #offlineToast {
+      display: none;
+      position: fixed; top: 1.5rem; right: 1.5rem; z-index: 99;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.4);
+      color: #fca5a5;
+      padding: 0.5rem 1rem; border-radius: 999px;
+      font-size: 0.8rem; font-weight: 600;
+      backdrop-filter: blur(12px);
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Number count-up animation */
+    @keyframes numPop {
+      0%   { transform: scale(0.85); opacity: 0; }
+      60%  { transform: scale(1.06); }
+      100% { transform: scale(1);    opacity: 1; }
+    }
+    .num-pop { animation: numPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+    /* Particle canvas style */
+    #bg-canvas { opacity: 0.6; }
+  </style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div id="glow-orb"></div>
+<div id="offlineToast">⚠ Connection lost — retrying…</div>
+
+<div id="app">
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🏦</div>
+      <div class="brand-text">
+        <h1>Queue Status</h1>
+        <p>Real-time wait time estimate</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-dot"><span></span> LIVE</div>
+      <div id="clock">—</div>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+
+    <!-- Big wait card -->
+    <div class="glass wait-card" id="waitCard">
+      <div class="wait-label">Estimated Wait Time</div>
+      <div class="wait-number-wrap">
+        <!-- Decorative rotating ring -->
+        <svg class="ring-svg" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="130" cy="130" r="120" stroke="url(#ringGrad)" stroke-width="1.5" stroke-dasharray="12 8" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="ringGrad" x1="0" y1="0" x2="260" y2="260" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#6366f1" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span id="waitNum">—</span>
+        <span class="wait-unit">min</span>
+      </div>
+      <div>
+        <span class="status-pill" id="statusPill">● Loading…</span>
+      </div>
+      <div id="queueMsg">Fetching queue data…</div>
+    </div>
+
+    <!-- Side panel -->
+    <div class="side-panel">
+
+      <!-- Queue depth -->
+      <div class="glass stat-card">
+        <div class="stat-icon" style="background:rgba(99,102,241,0.15);">👥</div>
+        <div class="stat-info">
+          <div class="stat-value" id="statQueue">—</div>
+          <div class="stat-label">People in Queue</div>
+        </div>
+      </div>
+
+      <!-- Open counters -->
+      <div class="glass stat-card">
+        <div class="stat-icon" style="background:rgba(16,185,129,0.15);">🪟</div>
+        <div class="stat-info">
+          <div class="stat-value" id="statCounters">—</div>
+          <div class="stat-label">Open Windows</div>
+        </div>
+      </div>
+
+      <!-- Avg service -->
+      <div class="glass stat-card">
+        <div class="stat-icon" style="background:rgba(245,158,11,0.15);">⏱</div>
+        <div class="stat-info">
+          <div class="stat-value" id="statSvc">—</div>
+          <div class="stat-label">Avg Service (min)</div>
+        </div>
+      </div>
+
+      <!-- Now Serving Token Board -->
+      <div class="glass stat-card" style="border-color:rgba(56,189,248,0.25);background:rgba(56,189,248,0.03);">
+        <div class="stat-icon" style="background:rgba(56,189,248,0.15);">🎫</div>
+        <div class="stat-info">
+          <div class="stat-value" id="dispServingToken" style="color:#38bdf8;font-size:1.4rem;">—</div>
+          <div class="stat-label">Now Serving Token</div>
+        </div>
+      </div>
+
+      <!-- Confidence -->
+      <div class="glass conf-card">
+        <div>
+          <div class="conf-label">Prediction Mode</div>
+        </div>
+        <span id="confBadge" class="badge-formula">Formula</span>
+      </div>
+
+      <!-- Legend -->
+      <div class="glass legend-card">
+        <div class="legend-title">Wait Level Guide</div>
+        <div class="legend-items">
+          <div class="legend-row"><span class="legend-dot" style="background:#22c55e;box-shadow:0 0 6px #22c55e88"></span> Short — under 10 min</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#f59e0b;box-shadow:0 0 6px #f59e0b88"></span> Moderate — 10 to 25 min</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#ef4444;box-shadow:0 0 6px #ef444488"></span> Long — over 25 min</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <span>Last updated: <span id="lastUpdated">—</span></span>
+    <div style="display:flex;align-items:center;gap:0.5rem;">
+      <span>Next refresh</span>
+      <div id="refreshBar"><div id="refreshFill"></div></div>
+    </div>
+    <div style="display:flex;gap:1.25rem;">
+      <a href="/tokens" style="color:#a78bfa;">🎫 Token Kiosk</a>
+      <a href="/staff">Staff Panel →</a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  // ── Clock ──
+  function updateClock() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ── Particle Canvas ──
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+  const NUM = 55;
+
+  function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function makeParticle() {
+    return {
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.8 + 0.3,
+      vx: (Math.random() - 0.5) * 0.25,
+      vy: (Math.random() - 0.5) * 0.25,
+      alpha: Math.random() * 0.5 + 0.1,
+    };
+  }
+  for (let i = 0; i < NUM; i++) particles.push(makeParticle());
+
+  let accentColor = '99,102,241';
+
+  function drawParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = canvas.width;
+      if (p.x > canvas.width) p.x = 0;
+      if (p.y < 0) p.y = canvas.height;
+      if (p.y > canvas.height) p.y = 0;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${accentColor},${p.alpha})`;
+      ctx.fill();
+
+      // Draw connecting lines to nearby particles
+      for (let j = i + 1; j < particles.length; j++) {
+        const q = particles[j];
+        const dx = p.x - q.x, dy = p.y - q.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y);
+          ctx.strokeStyle = `rgba(${accentColor},${0.06 * (1 - dist/120)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(drawParticles);
+  }
+  drawParticles();
+
+  // ── Status themes ──
+  const THEMES = {
+    short: {
+      color: '#22c55e', rgb: '34,197,94',
+      glow: 'rgba(34,197,94,0.22)',
+      cardGlow: 'rgba(34,197,94,0.1)',
+      pillBg: 'rgba(34,197,94,0.15)', pillBorder: 'rgba(34,197,94,0.35)',
+      icon: '🟢', label: 'SHORT WAIT',
+    },
+    moderate: {
+      color: '#f59e0b', rgb: '245,158,11',
+      glow: 'rgba(245,158,11,0.22)',
+      cardGlow: 'rgba(245,158,11,0.1)',
+      pillBg: 'rgba(245,158,11,0.15)', pillBorder: 'rgba(245,158,11,0.35)',
+      icon: '🟡', label: 'MODERATE WAIT',
+    },
+    long: {
+      color: '#ef4444', rgb: '239,68,68',
+      glow: 'rgba(239,68,68,0.22)',
+      cardGlow: 'rgba(239,68,68,0.1)',
+      pillBg: 'rgba(239,68,68,0.15)', pillBorder: 'rgba(239,68,68,0.35)',
+      icon: '🔴', label: 'LONG WAIT',
+    },
+  };
+
+  let currentWait = null;
+
+  // Animated counter
+  function animateCount(el, from, to, duration = 600) {
+    if (from === to) return;
+    const start = performance.now();
+    function step(now) {
+      const p = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(from + (to - from) * ease);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function applyTheme(label, wait) {
+    const t = THEMES[label] || THEMES.moderate;
+    accentColor = t.rgb;
+
+    document.getElementById('glow-orb').style.background = t.glow;
+    document.getElementById('waitCard').style.setProperty('--card-glow', t.cardGlow);
+
+    const waitEl = document.getElementById('waitNum');
+    waitEl.style.color = t.color;
+    waitEl.style.textShadow = `0 0 60px ${t.color}55, 0 0 20px ${t.color}33`;
+
+    const pill = document.getElementById('statusPill');
+    pill.style.background = t.pillBg;
+    pill.style.border = `1px solid ${t.pillBorder}`;
+    pill.style.color = t.color;
+    pill.style.boxShadow = `0 0 20px ${t.color}22`;
+    pill.textContent = `${t.icon}  ${t.label}`;
+
+    // Animate number
+    const from = currentWait ?? wait;
+    animateCount(waitEl, from, Math.round(wait));
+    currentWait = wait;
+
+    // Pop animation
+    waitEl.classList.remove('num-pop');
+    void waitEl.offsetWidth;
+    waitEl.classList.add('num-pop');
+  }
+
+  // ── Refresh progress bar ──
+  const REFRESH_MS = 60000;
+  let refreshStart = Date.now();
+
+  function updateBar() {
+    const elapsed = Date.now() - refreshStart;
+    const pct = Math.max(0, 100 - (elapsed / REFRESH_MS) * 100);
+    document.getElementById('refreshFill').style.width = pct + '%';
+  }
+  setInterval(updateBar, 1000);
+
+  // ── Fetch status ──
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/api/status');
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+
+      applyTheme(d.status_label, d.predicted_wait_mins);
+
+      document.getElementById('queueMsg').textContent    = d.message;
+      document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-IN');
+
+      // Stats with small animation
+      document.getElementById('statQueue').textContent    = d.queue_depth;
+      document.getElementById('statCounters').textContent = d.active_counters;
+      document.getElementById('statSvc').textContent      = d.avg_service_time_mins.toFixed(1);
+
+      const confEl = document.getElementById('confBadge');
+      if (d.confidence === 'model') {
+        confEl.textContent  = '🤖 ML Model';
+        confEl.className    = 'badge-model';
+      } else {
+        confEl.textContent  = '📐 Formula';
+        confEl.className    = 'badge-formula';
+      }
+
+      // Check serving tokens
+      try {
+        const sumR = await fetch('/api/tokens/summary');
+        if (sumR.ok) {
+          const sData = await sumR.json();
+          const disp = document.getElementById('dispServingToken');
+          if (sData.active_serving && sData.active_serving.length > 0) {
+            disp.textContent = sData.active_serving[0].token_number + ` (C${sData.active_serving[0].counter_id || 1})`;
+          } else {
+            disp.textContent = 'None';
+          }
+        }
+      } catch(e) {}
+
+      document.getElementById('offlineToast').style.display = 'none';
+    } catch {
+      document.getElementById('offlineToast').style.display = 'block';
+    } finally {
+      refreshStart = Date.now();
+    }
+  }
+
+  fetchStatus();
+  setInterval(fetchStatus, REFRESH_MS);
+</script>
+</body>
+</html>

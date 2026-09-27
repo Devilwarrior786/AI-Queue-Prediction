@@ -1,0 +1,47 @@
+{
+  "trained_at": "2026-09-25T19:26:10",
+  "n_samples": 123744,
+  "n_train": 105182,
+  "n_test": 18562,
+  "features": [
+    "hour",
+    "minute",
+    "day_of_week",
+    "week_of_year",
+    "month",
+    "quarter",
+    "is_month_start",
+    "is_month_end",
+    "is_holiday_adjacent",
+    "queue_depth",
+    "active_counters",
+    "avg_service_time_mins"
+  ],
+  "n_features": 12,
+  "best_params": {
+    "gbr__subsample": 0.95,
+    "gbr__n_estimators": 150,
+    "gbr__min_samples_split": 10,
+    "gbr__max_depth": 5,
+    "gbr__learning_rate": 0.08
+  },
+  "cv_mae_minutes": 2.018,
+  "test_mae_minutes": 1.907,
+  "test_rmse_minutes": 3.055,
+  "test_r2": 0.955,
+  "feature_importances": {
+    "queue_depth": 0.6049,
+    "active_counters": 0.2621,
+    "avg_service_time_mins": 0.1297,
+    "hour": 0.002,
+    "week_of_year": 0.0005,
+    "minute": 0.0004,
+    "is_month_end": 0.0002,
+    "month": 0.0001,
+    "is_holiday_adjacent": 0.0001,
+    "day_of_week": 0.0001,
+    "is_month_start": 0.0,
+    "quarter": 0.0
+  },
+  "model_path": "C:\\Projects\\AI Que\\models\\queue_model.pkl"
+}
